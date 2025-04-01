@@ -1,0 +1,50 @@
+{
+	"info": {
+		"_postman_id": "1d8a0db2-2129-43a0-82e6-72c9b3e219ca",
+		"name": "Get User Information",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Get User Information",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json",
+						"type": "text"
+					},
+					{
+						"key": "Authorization",
+						"value": "YOUR_JWT_TOKEN",
+						"type": "text",
+						"description": "The JWT token obtained after successful login. Replace 'YOUR_JWT_TOKEN' with your actual token."
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://my-aws-api.com/user-info",
+					"protocol": "https",
+					"host": [
+						"my-aws-api",
+						"com"
+					],
+					"path": [
+						"user-info"
+					]
+				},
+				"description": "This request retrieves the username and email of a user based on a valid JWT token provided in the `Authorization` header.\n\n**What this request does:**\n\n1.  Expects a JWT token in the `Authorization` header of the request. The token should be in the format `<your_token>`, but for simplicity in Postman, you'll just provide the token itself in the header value.\n2.  Verifies the provided JWT token using the `JWT_SECRET` environment variable.\n3.  If the token is valid, it decodes the token to extract the `username`.\n4.  Retrieves the user's information (specifically `username` and `email`) from the DynamoDB table (`USERS_TABLE`) using the extracted `username` as the key.\n5.  Returns a successful response with a `200 OK` status code and a JSON body containing the user's `username` and `email`.\n\n**Important:** This endpoint does not require a body in the request, but the `Content-Type: application/json` header is still included as per your Lambda function's CORS settings.\n\n**Possible responses:**\n\n* **200 OK:** Successful retrieval of user information.\n    ```json\n    {\n        \"username\": \"testuser\",\n        \"email\": \"test@example.com\"\n    }\n    ```\n* **401 Unauthorized:** Authentication failed. This can happen if:\n    * No token is provided in the `Authorization` header.\n    * The provided token is invalid (expired, malformed, or signature mismatch).\n    ```json\n    {\n        \"message\": \"Unauthorized: No token provided.\"\n    }\n    ```\n    ```json\n    {\n        \"message\": \"Unauthorized: Invalid token.\"\n    }\n    ```\n* **404 Not Found:** The user associated with the decoded username was not found in the database.\n    ```json\n    {\n        \"message\": \"User not found.\"\n    }\n    ```\n* **500 Internal Server Error:** An unexpected error occurred on the server. This could be due to issues with DynamoDB or if the `JWT_SECRET` environment variable is not set.\n    ```json\n    {\n        \"message\": \"Internal server error\",\n        \"error\": \"[error details]\"\n    }\n    ```\n    ```json\n    {\n        \"message\": \"Internal server error: JWT secret not configured.\"\n    }\n    ```"
+			},
+			"response": []
+		}
+	]
+}

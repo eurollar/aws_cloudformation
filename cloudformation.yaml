@@ -1,0 +1,540 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: CloudFormation template for user management with DynamoDB, Lambda, and API Gateway (code from S3), including CORS, validation, and error handling.
+
+Parameters:
+  UsersTableName:
+    Type: String
+    Description: Name of the DynamoDB table to store user data.
+    Default: Users
+  JWTSecret:
+    Type: String
+    Description: Secret key used to sign JWT tokens.
+    NoEcho: true
+  CorsAllowOrigin:
+    Type: String
+    Description: Allowed Origin for CORS (e.g., '*', or a specific domain).
+    Default: '*'
+  CorsAllowMethods:
+    Type: String
+    Description: Allowed Methods for CORS.
+    Default: 'POST,OPTIONS'
+  CorsAllowHeaders:
+    Type: String
+    Description: Allowed Headers for CORS.
+    Default: 'Content-Type,Authorization'
+  StackName:
+    Type: String
+    Description: Stack name.
+    Default: prod
+  LambdaCodeBucket:
+    Type: String
+    Description: S3 Bucket Name.
+
+Resources:
+  UsersTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Ref UsersTableName
+      AttributeDefinitions:
+        - AttributeName: username
+          AttributeType: S
+      KeySchema:
+        - AttributeName: username
+          KeyType: HASH
+      ProvisionedThroughput:
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 5
+
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: DynamoDBAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:PutItem
+                  - dynamodb:GetItem
+                Resource: !GetAtt UsersTable.Arn
+        - PolicyName: CloudWatchLogsAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/*'
+        - PolicyName: S3AccessForLambdaCode
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                Resource: !Sub 'arn:aws:s3:::${LambdaCodeBucket}/*'
+
+  RegisterUserFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: registerUser
+      Handler: registerUser.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Runtime: nodejs20.x
+      Code:
+        S3Bucket: !Ref LambdaCodeBucket
+        S3Key: registerUser.zip
+      Timeout: 5
+      Environment:
+        Variables:
+          USERS_TABLE: !Ref UsersTable
+
+  LoginUserFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: loginUser
+      Handler: loginUser.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Runtime: nodejs20.x
+      Code:
+        S3Bucket: !Ref LambdaCodeBucket
+        S3Key: loginUser.zip
+      Timeout: 5
+      Environment:
+        Variables:
+          USERS_TABLE: !Ref UsersTable
+          JWT_SECRET: !Ref JWTSecret
+
+  GetUserInfoFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: getUserInfo
+      Handler: getUserInfo.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Runtime: nodejs20.x
+      Code:
+        S3Bucket: !Ref LambdaCodeBucket
+        S3Key: getUserInfo.zip
+      Timeout: 5
+      Environment:
+        Variables:
+          USERS_TABLE: !Ref UsersTable
+          JWT_SECRET: !Ref JWTSecret
+
+  UserManagementAPI:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: UserManagementAPI
+      Description: "API for managing user accounts."
+
+  RegisterRequestModel:
+    Type: AWS::ApiGateway::Model
+    Properties:
+      RestApiId: !Ref UserManagementAPI
+      ContentType: application/json
+      Name: RegisterRequest
+      Schema:
+        type: object
+        required:
+          - username
+          - password
+        properties:
+          username:
+            type: string
+          password:
+            type: string
+          email:
+            type: string
+            format: email
+
+  LoginRequestModel:
+    Type: AWS::ApiGateway::Model
+    Properties:
+      RestApiId: !Ref UserManagementAPI
+      ContentType: application/json
+      Name: LoginRequest
+      Schema:
+        type: object
+        required:
+          - username
+          - password
+        properties:
+          username:
+            type: string
+          password:
+            type: string
+
+  RegisterRequestValidator:
+    Type: AWS::ApiGateway::RequestValidator
+    Properties:
+      RestApiId: !Ref UserManagementAPI
+      Name: RegisterBodyValidator
+      ValidateRequestBody: true
+      ValidateRequestParameters: false
+
+  LoginRequestValidator:
+    Type: AWS::ApiGateway::RequestValidator
+    Properties:
+      RestApiId: !Ref UserManagementAPI
+      Name: LoginBodyValidator
+      ValidateRequestBody: true
+      ValidateRequestParameters: false
+
+  RegisterResource:
+    Type: AWS::ApiGateway::Resource
+    Description: "Endpoint for user registration."
+    Properties:
+      RestApiId: !Ref UserManagementAPI
+      ParentId: !GetAtt UserManagementAPI.RootResourceId
+      PathPart: register      
+
+  RegisterMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      HttpMethod: POST
+      RestApiId: !Ref UserManagementAPI
+      ResourceId: !Ref RegisterResource
+      AuthorizationType: NONE
+      RequestValidatorId: !Ref RegisterRequestValidator
+      MethodResponses:
+        - StatusCode: '201'
+          ResponseParameters:
+            'method.response.header.Access-Control-Allow-Origin': true
+            'method.response.header.Access-Control-Allow-Methods': true
+            'method.response.header.Access-Control-Allow-Headers': true
+        - StatusCode: '400'
+          ResponseParameters:
+            'method.response.header.Access-Control-Allow-Origin': true
+            'method.response.header.Access-Control-Allow-Methods': true
+            'method.response.header.Access-Control-Allow-Headers': true
+        - StatusCode: '405'
+          ResponseParameters:
+            'method.response.header.Access-Control-Allow-Origin': true
+            'method.response.header.Access-Control-Allow-Methods': true
+            'method.response.header.Access-Control-Allow-Headers': true
+        - StatusCode: '409'
+          ResponseParameters:
+            'method.response.header.Access-Control-Allow-Origin': true
+            'method.response.header.Access-Control-Allow-Methods': true
+            'method.response.header.Access-Control-Allow-Headers': true
+        - StatusCode: '500'
+          ResponseParameters:
+            'method.response.header.Access-Control-Allow-Origin': true
+            'method.response.header.Access-Control-Allow-Methods': true
+            'method.response.header.Access-Control-Allow-Headers': true
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${RegisterUserFunction.Arn}/invocations'
+        IntegrationResponses:
+          - StatusCode: '201'
+            ResponseTemplates:
+              application/json: !Sub '$input.body'
+          - StatusCode: '400'
+            SelectionPattern: '.*"statusCode":400.*'
+            ResponseTemplates:
+              application/json: !Sub '$input.body'
+          - StatusCode: '405'
+            SelectionPattern: '.*"statusCode":405.*'
+            ResponseTemplates:
+              application/json: !Sub '$input.body'
+          - StatusCode: '409'
+            SelectionPattern: '.*"statusCode":409.*'
+            ResponseTemplates:
+              application/json: !Sub '$input.body'
+          - StatusCode: '500'
+            ResponseTemplates:
+              application/json: '{"error": "Internal Server Error"}'
+
+  RegisterOptionsMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      HttpMethod: OPTIONS
+      RestApiId: !Ref UserManagementAPI
+      ResourceId: !Ref RegisterResource
+      AuthorizationType: NONE
+      MethodResponses:
+        - StatusCode: '200'
+          ResponseParameters:
+            'method.response.header.Access-Control-Allow-Origin': true
+            'method.response.header.Access-Control-Allow-Methods': true
+            'method.response.header.Access-Control-Allow-Headers': true
+      Integration:
+        Type: MOCK
+        RequestTemplates:
+          application/json: '{ statusCode: 200 }'
+        IntegrationResponses:
+          - StatusCode: '200'
+            ResponseParameters:
+              'method.response.header.Access-Control-Allow-Origin': "'!Ref CorsAllowOrigin'"
+              'method.response.header.Access-Control-Allow-Methods': "'!Ref CorsAllowMethods'"
+              'method.response.header.Access-Control-Allow-Headers': "'!Ref CorsAllowHeaders'"
+            ResponseTemplates:
+              application/json: ''
+
+  LoginResource:
+    Type: AWS::ApiGateway::Resource
+    Description: "Endpoint for user login."
+    Properties:
+      RestApiId: !Ref UserManagementAPI
+      ParentId: !GetAtt UserManagementAPI.RootResourceId
+      PathPart: login      
+
+  LoginMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      HttpMethod: POST
+      RestApiId: !Ref UserManagementAPI
+      ResourceId: !Ref LoginResource
+      AuthorizationType: NONE
+      RequestValidatorId: !Ref LoginRequestValidator
+      MethodResponses:
+        - StatusCode: '200'
+          ResponseParameters:
+            'method.response.header.Access-Control-Allow-Origin': true
+            'method.response.header.Access-Control-Allow-Methods': true
+            'method.response.header.Access-Control-Allow-Headers': true
+        - StatusCode: '400'
+          ResponseParameters:
+            'method.response.header.Access-Control-Allow-Origin': true
+            'method.response.header.Access-Control-Allow-Methods': true
+            'method.response.header.Access-Control-Allow-Headers': true
+        - StatusCode: '401'
+          ResponseParameters:
+            'method.response.header.Access-Control-Allow-Origin': true
+            'method.response.header.Access-Control-Allow-Methods': true
+            'method.response.header.Access-Control-Allow-Headers': true
+        - StatusCode: '405'
+          ResponseParameters:
+            'method.response.header.Access-Control-Allow-Origin': true
+            'method.response.header.Access-Control-Allow-Methods': true
+            'method.response.header.Access-Control-Allow-Headers': true
+        - StatusCode: '500'
+          ResponseParameters:
+            'method.response.header.Access-Control-Allow-Origin': true
+            'method.response.header.Access-Control-Allow-Methods': true
+            'method.response.header.Access-Control-Allow-Headers': true
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${LoginUserFunction.Arn}/invocations'
+        IntegrationResponses:
+          - StatusCode: '200'
+            ResponseTemplates:
+              application/json: !Sub '$input.body'
+          - StatusCode: '400'
+            SelectionPattern: '.*"statusCode":400.*'
+            ResponseTemplates:
+              application/json: !Sub '$input.body'
+          - StatusCode: '401'
+            SelectionPattern: '.*"statusCode":401.*'
+            ResponseTemplates:
+              application/json: !Sub '$input.body'
+          - StatusCode: '405'
+            SelectionPattern: '.*"statusCode":405.*'
+            ResponseTemplates:
+              application/json: !Sub '$input.body'
+          - StatusCode: '500'
+            ResponseTemplates:
+              application/json: '{"error": "Internal Server Error"}'
+
+  LoginOptionsMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      HttpMethod: OPTIONS
+      RestApiId: !Ref UserManagementAPI
+      ResourceId: !Ref LoginResource
+      AuthorizationType: NONE
+      MethodResponses:
+        - StatusCode: '200'
+          ResponseParameters:
+            'method.response.header.Access-Control-Allow-Origin': true
+            'method.response.header.Access-Control-Allow-Methods': true
+            'method.response.header.Access-Control-Allow-Headers': true
+      Integration:
+        Type: MOCK
+        RequestTemplates:
+          application/json: '{ statusCode: 200 }'
+        IntegrationResponses:
+          - StatusCode: '200'
+            ResponseParameters:
+              'method.response.header.Access-Control-Allow-Origin': "'!Ref CorsAllowOrigin'"
+              'method.response.header.Access-Control-Allow-Methods': "'!Ref CorsAllowMethods'"
+              'method.response.header.Access-Control-Allow-Headers': "'!Ref CorsAllowHeaders'"
+            ResponseTemplates:
+              application/json: ''
+
+  UserInfoResource:
+    Type: AWS::ApiGateway::Resource
+    Description: "Endpoint for retrieving user information (requires JWT)."
+    Properties:
+      RestApiId: !Ref UserManagementAPI
+      ParentId: !GetAtt UserManagementAPI.RootResourceId
+      PathPart: user-info      
+
+  GetUserInfoMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      HttpMethod: POST
+      RestApiId: !Ref UserManagementAPI
+      ResourceId: !Ref UserInfoResource
+      AuthorizationType: NONE
+      MethodResponses:
+        - StatusCode: '200'
+          ResponseParameters:
+            'method.response.header.Access-Control-Allow-Origin': true
+            'method.response.header.Access-Control-Allow-Methods': true
+            'method.response.header.Access-Control-Allow-Headers': true
+        - StatusCode: '400'
+          ResponseParameters:
+            'method.response.header.Access-Control-Allow-Origin': true
+            'method.response.header.Access-Control-Allow-Methods': true
+            'method.response.header.Access-Control-Allow-Headers': true
+        - StatusCode: '401'
+          ResponseParameters:
+            'method.response.header.Access-Control-Allow-Origin': true
+            'method.response.header.Access-Control-Allow-Methods': true
+            'method.response.header.Access-Control-Allow-Headers': true
+        - StatusCode: '404'
+          ResponseParameters:
+            'method.response.header.Access-Control-Allow-Origin': true
+            'method.response.header.Access-Control-Allow-Methods': true
+            'method.response.header.Access-Control-Allow-Headers': true
+        - StatusCode: '405'
+          ResponseParameters:
+            'method.response.header.Access-Control-Allow-Origin': true
+            'method.response.header.Access-Control-Allow-Methods': true
+            'method.response.header.Access-Control-Allow-Headers': true
+        - StatusCode: '500'
+          ResponseParameters:
+            'method.response.header.Access-Control-Allow-Origin': true
+            'method.response.header.Access-Control-Allow-Methods': true
+            'method.response.header.Access-Control-Allow-Headers': true
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${GetUserInfoFunction.Arn}/invocations'
+        IntegrationResponses:
+          - StatusCode: '200'
+            ResponseTemplates:
+              application/json: !Sub '$input.body'
+          - StatusCode: '400'
+            SelectionPattern: '.*"statusCode":400.*'
+            ResponseTemplates:
+              application/json: !Sub '$input.body'
+          - StatusCode: '401'
+            SelectionPattern: '.*"statusCode":401.*'
+            ResponseTemplates:
+              application/json: !Sub '$input.body'
+          - StatusCode: '404'
+            SelectionPattern: '.*"statusCode":404.*'
+            ResponseTemplates:
+              application/json: !Sub '$input.body'
+          - StatusCode: '405'
+            SelectionPattern: '.*"statusCode":405.*'
+            ResponseTemplates:
+              application/json: !Sub '$input.body'
+          - StatusCode: '500'
+            ResponseTemplates:
+              application/json: '{"error": "Internal Server Error"}'
+
+  UserInfoOptionsMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      HttpMethod: OPTIONS
+      RestApiId: !Ref UserManagementAPI
+      ResourceId: !Ref UserInfoResource
+      AuthorizationType: NONE
+      MethodResponses:
+        - StatusCode: '200'
+          ResponseParameters:
+            'method.response.header.Access-Control-Allow-Origin': true
+            'method.response.header.Access-Control-Allow-Methods': true
+            'method.response.header.Access-Control-Allow-Headers': true
+      Integration:
+        Type: MOCK
+        RequestTemplates:
+          application/json: '{ statusCode: 200 }'
+        IntegrationResponses:
+          - StatusCode: '200'
+            ResponseParameters:
+              'method.response.header.Access-Control-Allow-Origin': "'!Ref CorsAllowOrigin'"
+              'method.response.header.Access-Control-Allow-Methods': "'!Ref CorsAllowMethods'"
+              'method.response.header.Access-Control-Allow-Headers': "'!Ref CorsAllowHeaders'"
+            ResponseTemplates:
+              application/json: ''
+
+  RegisterUserPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref RegisterUserFunction
+      Principal: apigateway.amazonaws.com
+
+  LoginUserPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref LoginUserFunction
+      Principal: apigateway.amazonaws.com
+
+  GetUserInfoPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref GetUserInfoFunction
+      Principal: apigateway.amazonaws.com
+
+  APIDeployment:
+    Type: AWS::ApiGateway::Deployment
+    DependsOn:
+      - RegisterMethod
+      - LoginMethod
+      - GetUserInfoMethod
+      - RegisterOptionsMethod
+      - LoginOptionsMethod
+      - UserInfoOptionsMethod
+    Properties:
+      RestApiId: !Ref UserManagementAPI
+      StageName: prod
+
+  DocumentationPart:
+    Type: AWS::ApiGateway::DocumentationPart
+    Properties:
+      RestApiId: !Ref UserManagementAPI
+      Location:
+        Type: METHOD
+        Method: POST
+        Path: /register
+      Properties: '{"description": "Registers a new user"}'
+
+  DocumentationPartLogin:
+    Type: AWS::ApiGateway::DocumentationPart
+    Properties:
+      RestApiId: !Ref UserManagementAPI
+      Location:
+        Type: METHOD
+        Method: POST
+        Path: /login
+      Properties: '{"description": "Logs in a user and returns a JWT token"}'
+
+  DocumentationPartUserInfo:
+    Type: AWS::ApiGateway::DocumentationPart
+    Properties:
+      RestApiId: !Ref UserManagementAPI
+      Location:
+        Type: METHOD
+        Method: GET
+        Path: /user-info
+      Properties: '{"description": "Retrieves user information based on JWT token"}'
