@@ -1,3 +1,6 @@
+# Serverless API with AWS CloudFormation
+# CloudFormation, ApiGateway, Lambda, DynamoDB, S3, CloudWatch, IAM
+
 ## Prerequisites
 Before deploying and using this API, ensure you have the following:
 
