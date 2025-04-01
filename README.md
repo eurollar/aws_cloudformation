@@ -19,10 +19,11 @@ Before deploying and using this API, ensure you have the following:
 
 3. After the S3 bucket is created, upload the zip files for the Lambda functions to S3. Enter the following commands sequentially:
    ```bash
-   aws s3 cp lambda/registerUser.zip s3://prod-lambda-code-556240469601-us-east-1/registerUser.zip
-   aws s3 cp lambda/loginUser.zip s3://prod-lambda-code-556240469601-us-east-1/loginUser.zip
-   aws s3 cp lambda/getUserInfo.zip s3://prod-lambda-code-556240469601-us-east-1/getUserInfo.zip
+   aws s3 cp lambda/registerUser.zip s3://{YOUR_S3_BUCKET_NAME}/registerUser.zip
+   aws s3 cp lambda/loginUser.zip s3://{YOUR_S3_BUCKET_NAME}/loginUser.zip
+   aws s3 cp lambda/getUserInfo.zip s3://{YOUR_S3_BUCKET_NAME}/getUserInfo.zip
    ```
+   where `{YOUR_S3_BUCKET_NAME}` - insert the name of the created S3 Bucket
 
 4. Verify in the AWS Management Console that the files have been uploaded to the S3 Bucket.
 
