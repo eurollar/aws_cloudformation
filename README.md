@@ -8,6 +8,8 @@ Before deploying and using this API, ensure you have the following:
 * AWS CLI configured with appropriate credentials.
 * Node.js and npm installed (for deploying Lambda functions written in JavaScript).
 * Postman application installed (for importing and using the provided API collections).
+* Go to IAM, create a user, and add the following policies to it for deployment.
+![Image with policies for CloudFormation](./images/policies.png)
 
 ## Deployment
 1. Copy the project from the repo. While in the project root, open the console and enter the following command:
