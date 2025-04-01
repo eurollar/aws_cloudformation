@@ -26,7 +26,7 @@ Before deploying and using this API, ensure you have the following:
 
 4. Verify in the AWS Management Console that the files have been uploaded to the S3 Bucket.
 
-5. o to IAM, create a user, and add the following policies to it for deployment.
+5. Go to IAM, create a user, and add the following policies to it for deployment.
 ![Image with policies for CloudFormation](./images/policies.png)
 
 6. For the following steps, it is necessary to use the previously noted S3 Bucket name, as well as a JWT Secret string for the JWT token.
