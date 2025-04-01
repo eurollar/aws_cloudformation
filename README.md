@@ -10,7 +10,7 @@ Before deploying and using this API, ensure you have the following:
 * Postman application installed (for importing and using the provided API collections).
 
 ## Deployment
-1. While in the project root, open the console and enter the following command:
+1. Copy the project from the repo. While in the project root, open the console and enter the following command:
    ```bash
    aws cloudformation create-stack --stack-name LambdaS3BucketStack --template-body file://s3_cloudformation.yaml --capabilities CAPABILITY_NAMED_IAM
    ```
